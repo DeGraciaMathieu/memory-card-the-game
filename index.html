@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CARTE MÉMOIRE — proto</title>
+<style>
+  :root{
+    --bios-top:#3a3a86;
+    --bios-bot:#0d0d24;
+    --panel:#b4b4c6;
+    --panel-dark:#8e8ea4;
+    --lite:#e6e6f2;
+    --shade:#54546c;
+    --ink:#15152c;
+    --sel:#3b48c8;
+    --rot:#c9345c;
+    --dead:#26263a;
+    --ok:#2f7d4f;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:linear-gradient(180deg,var(--bios-top),var(--bios-bot));
+    background-attachment:fixed;
+    font-family:ui-monospace,"DejaVu Sans Mono","Courier New",monospace;
+    color:var(--ink);
+    display:flex;align-items:center;justify-content:center;
+    padding:16px;
+    -webkit-font-smoothing:none;
+  }
+  body::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:9;
+    background:repeating-linear-gradient(180deg,rgba(0,0,0,.13) 0 1px,transparent 1px 3px);
+    mix-blend-mode:multiply;opacity:.5;
+  }
+  .bezel{width:100%;max-width:920px}
+  .bar{
+    background:var(--panel);border:2px solid;border-color:var(--lite) var(--shade) var(--shade) var(--lite);
+    padding:7px 10px;display:flex;justify-content:space-between;align-items:center;
+    font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;
+  }
+  .bar .yr{font-size:14px}
+  .cols{display:grid;grid-template-columns:1fr 300px;gap:8px;margin-top:8px}
+  .panel{
+    background:var(--panel);border:2px solid;border-color:var(--lite) var(--shade) var(--shade) var(--lite);
+    padding:8px;
+  }
+  .ttl{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#3d3d5c;
+       border-bottom:1px solid var(--panel-dark);padding-bottom:4px;margin-bottom:6px}
+
+  /* liste des sauvegardes */
+  #list{height:288px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+  .save{
+    display:flex;gap:8px;align-items:center;padding:4px 6px;cursor:pointer;
+    border:1px solid transparent;background:rgba(255,255,255,.16);
+  }
+  .save:hover{background:rgba(255,255,255,.4)}
+  .save.sel{background:var(--sel);color:#fff;border-color:var(--lite)}
+  .save.rot{background:repeating-linear-gradient(45deg,rgba(201,52,92,.45) 0 6px,rgba(201,52,92,.2) 6px 12px)}
+  .save.sel.rot{background:var(--rot);color:#fff}
+  .save canvas{image-rendering:pixelated;width:32px;height:32px;flex:0 0 32px;
+               border:1px solid rgba(0,0,0,.35);background:#0b0b18}
+  .meta{min-width:0;flex:1}
+  .nm{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sb{font-size:10px;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bk{font-size:10px;font-weight:700;opacity:.8;flex:0 0 auto;text-align:right}
+  .empty{font-size:11px;opacity:.6;padding:12px 4px;text-align:center}
+
+  /* strip de blocs */
+  #strip{display:flex;gap:3px;margin-top:4px}
+  .blk{
+    flex:1 1 0;aspect-ratio:3/4;position:relative;cursor:pointer;
+    background:#d8d8e6;border:2px solid;border-color:var(--lite) var(--shade) var(--shade) var(--lite);
+  }
+  .blk .n{position:absolute;bottom:1px;right:2px;font-size:8px;opacity:.45}
+  .blk.used{
+    background:hsl(var(--h) 42% 64%);
+    border-color:hsl(var(--h) 55% 84%) hsl(var(--h) 50% 28%) hsl(var(--h) 50% 28%) hsl(var(--h) 55% 84%);
+  }
+  /* blocs suivants d'une même sauvegarde : la gouttière est annulée, la plaque devient continue */
+  .blk.cont{margin-left:-3px;border-left-width:0}
+  .blk canvas{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);
+              width:64%;image-rendering:pixelated;pointer-events:none}
+  .blk.selg{background-image:linear-gradient(rgba(255,255,255,.6),rgba(255,255,255,0) 55%)}
+  .blk.rot{background:var(--rot);border-color:#ff8fa8 #6d0e26 #6d0e26 #ff8fa8}
+  .blk.dead{background:var(--dead);border-color:#3d3d55 #08080f #08080f #3d3d55;cursor:not-allowed}
+  .blk.dead::after{content:"×";position:absolute;inset:0;display:grid;place-items:center;
+                   color:#6a6a8a;font-size:16px;font-weight:700}
+  .blk.ghost{
+    background:hsl(var(--h) 40% 76%);
+    border-color:hsl(var(--h) 50% 92%) hsl(var(--h) 45% 42%) hsl(var(--h) 45% 42%) hsl(var(--h) 50% 92%);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.85);
+  }
+  .blk .tick{position:absolute;top:1px;left:3px;font-size:10px;font-weight:700;color:#fff}
+  .blk.writing{background:#f6f6ff}
+
+  /* entrant */
+  .inbox{display:flex;gap:10px;align-items:center;margin-top:8px;
+         background:rgba(0,0,0,.14);padding:8px;border:1px solid var(--panel-dark)}
+  .inbox canvas{image-rendering:pixelated;width:40px;height:40px;flex:0 0 40px;
+                border:1px solid rgba(0,0,0,.4);background:#0b0b18}
+  .inbox .nm{font-size:13px}
+  .req{font-size:11px;font-weight:700;letter-spacing:.08em}
+
+  /* actions */
+  .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+  button{
+    font:inherit;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+    padding:8px 12px;cursor:pointer;color:var(--ink);
+    background:var(--panel);border:2px solid;border-color:var(--lite) var(--shade) var(--shade) var(--lite);
+  }
+  button:hover:not(:disabled){background:#c8c8da}
+  button:active:not(:disabled){border-color:var(--shade) var(--lite) var(--lite) var(--shade)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button:focus-visible{outline:2px solid #ffe066;outline-offset:2px}
+  .prim{background:#cfd6ff}
+  .warn{background:#e3b9c6}
+
+  /* console */
+  #log{height:150px;overflow-y:auto;background:#0f0f22;color:#8ef0b0;
+       border:2px solid;border-color:var(--shade) var(--lite) var(--lite) var(--shade);
+       padding:6px;font-size:10px;line-height:1.5}
+  #log p{margin-bottom:2px}
+  #log .bad{color:#ff8098}
+  #log .hot{color:#ffe066}
+  .stats{display:flex;justify-content:space-between;font-size:11px;margin-top:6px;font-weight:700}
+  .stats span{opacity:.7;font-weight:400}
+  #status{font-size:11px;margin-top:6px;min-height:16px;color:#2a2a48}
+
+  /* fin */
+  .over{position:fixed;inset:0;background:rgba(6,6,20,.86);display:grid;place-items:center;z-index:20;padding:20px}
+  .over .panel{max-width:420px;text-align:center}
+  .over h2{font-size:16px;letter-spacing:.18em;margin-bottom:10px}
+  .over .big{font-size:30px;font-weight:700;margin:10px 0}
+  .over p{font-size:11px;line-height:1.6;margin-bottom:8px}
+  .hide{display:none!important}
+
+  @media(max-width:760px){
+    .cols{grid-template-columns:1fr}
+    #list{height:200px}
+    #log{height:104px}
+  }
+  @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="bezel">
+
+  <div class="bar">
+    <span>Carte mémoire — emplacement 1</span>
+    <span class="yr" id="year">1996</span>
+  </div>
+
+  <div class="cols">
+    <div class="panel">
+      <div class="ttl">Sauvegardes</div>
+      <div id="list"></div>
+
+      <div class="ttl" style="margin-top:10px">Blocs · <span id="freecount"></span></div>
+      <div id="strip"></div>
+
+      <div class="inbox">
+        <canvas id="inIcon" width="8" height="8"></canvas>
+        <div class="meta">
+          <div class="nm" id="inName">—</div>
+          <div class="sb" id="inSub">—</div>
+        </div>
+        <div class="req" id="inReq"></div>
+      </div>
+
+      <div class="acts">
+        <button id="btnWrite" class="prim">Écrire</button>
+        <button id="btnDel">Supprimer</button>
+        <button id="btnSkip">Refuser</button>
+        <button id="btnFmt" class="warn">Formater</button>
+        <button id="btnSnd" title="Son">♪ ON</button>
+      </div>
+      <div id="status"></div>
+    </div>
+
+    <div class="panel">
+      <div class="ttl">Journal</div>
+      <div id="log"></div>
+      <div class="stats"><span>Heures préservées</span><b id="hours">0 h</b></div>
+      <div class="stats"><span>Blocs morts</span><b id="deadc">0</b></div>
+      <div class="stats"><span>Tour</span><b id="turnc">1 / 30</b></div>
+      <div class="acts"><button id="btnRestart" style="width:100%">Nouvelle carte</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="over hide" id="over">
+  <div class="panel">
+    <h2 id="ovTitle">Fin de génération</h2>
+    <div class="big" id="ovScore">0 h</div>
+    <p id="ovText"></p>
+    <button id="ovBtn" class="prim">Reformater et recommencer</button>
+  </div>
+</div>
+
+<script>
+/* ---------- catalogue ---------- */
+const CATALOG = [
+  /* ---- fonds de tiroir 1995 : déjà là quand la partie commence ---- */
+  {y:1995,n:"Ridge Racer",s:"Ridge Racer",b:1,sub:"Time attack — 2'32 au chrono"},
+  {y:1995,n:"Battle Arena Toshinden",s:"Toshinden",b:1,sub:"Eiji — arcade dégagé"},
+  {y:1995,n:"Jumping Flash!",s:"Jumping Flash",b:1,sub:"Monde 4 — 6 lapins"},
+  {y:1995,n:"Rayman",s:"Rayman",b:2,sub:"62 % — Bois de Zérotoutou"},
+  {y:1995,n:"Destruction Derby",s:"Destruction Derby",b:1,sub:"Saison 1 — 7e"},
+  {y:1995,n:"WipEout",s:"WipEout",b:2,sub:"Rapier — Silverstream"},
+  {y:1995,n:"Air Combat",s:"Ace Combat",b:1,sub:"Mission 12 — Sky Emperor"},
+  {y:1995,n:"Twisted Metal",s:"Twisted Metal",b:1,sub:"Sweet Tooth — finale"},
+  {y:1995,n:"Philosoma",s:"Philosoma",b:1,sub:"Zone 4 — 3 vies"},
+  {y:1995,n:"Loaded",s:"Loaded",b:1,sub:"Bounca — niveau 9"},
+  {y:1995,n:"Kileak: The Blood",s:"Kileak",b:1,sub:"Sous-sol 6"},
+  {y:1995,n:"Novastorm",s:"Novastorm",b:1,sub:"Secteur 3"},
+
+  /* ---- 1996 ---- */
+  {y:1996,n:"Crash Bandicoot",s:"Crash",b:1,sub:"Île N. Sanity — 34 %"},
+  {y:1996,n:"Resident Evil",s:"Resident Evil",b:2,sub:"Jill — hall principal"},
+  {y:1996,n:"Tekken 2",s:"Tekken",b:1,sub:"Kazuya — arcade dégagé"},
+  {y:1996,n:"WipEout 2097",s:"WipEout",b:2,sub:"Phantom — Talon's Reach"},
+  {y:1996,n:"Tomb Raider",s:"Tomb Raider",b:3,sub:"Lara — Cité de Khamoon"},
+  {y:1996,n:"Destruction Derby 2",s:"Destruction Derby",b:1,sub:"Saison 2 — 4e"},
+  {y:1996,n:"Alien Trilogy",s:"Alien",b:2,sub:"Niveau 17 — la reine"},
+  {y:1996,n:"Broken Sword",s:"Broken Sword",b:3,sub:"George — Paris, le café"},
+  {y:1996,n:"Formula 1",s:"Formula 1",b:2,sub:"Saison — Monaco, 3e"},
+  {y:1996,n:"Suikoden",s:"Suikoden",b:2,sub:"108 étoiles — 71 recrutées"},
+  {y:1996,n:"Command & Conquer",s:"C&C",b:3,sub:"GDI — mission 9"},
+  {y:1996,n:"Die Hard Trilogy",s:"Die Hard",b:2,sub:"Tour Nakatomi — étage 21"},
+  {y:1996,n:"Tobal No.1",s:"Tobal",b:1,sub:"Quête — étage 12"},
+  {y:1996,n:"Star Gladiator",s:"Star Gladiator",b:1,sub:"Hayato — 11 victoires"},
+  {y:1996,n:"Actua Soccer",s:"Actua",b:1,sub:"Coupe — demi-finale"},
+  {y:1996,n:"Bust-A-Move 2",s:"Bust-A-Move",b:1,sub:"Puzzle — salle 87"},
+  {y:1996,n:"Disruptor",s:"Disruptor",b:1,sub:"Mission 8 — psi max"},
+  {y:1996,n:"Rage Racer",s:"Ridge Racer",b:2,sub:"Classe 3 — voiture peinte"},
+  {y:1996,n:"Pandemonium!",s:"Pandemonium",b:2,sub:"Nikki — niveau 14"},
+  {y:1996,n:"Descent",s:"Descent",b:2,sub:"Mine 12 — 4 vies"},
+  {y:1996,n:"Wing Commander III",s:"Wing Commander",b:3,sub:"Blair — Locanda"},
+  {y:1996,n:"Discworld",s:"Discworld",b:2,sub:"Rincevent — acte II"},
+
+  /* ---- 1997 ---- */
+  {y:1997,n:"Final Fantasy VII",s:"Final Fantasy",b:4,sub:"Cloud niv. 41 — Gongaga"},
+  {y:1997,n:"Gran Turismo",s:"Gran Turismo",b:3,sub:"Permis B — 12 voitures"},
+  {y:1997,n:"Castlevania SOTN",s:"Castlevania",b:2,sub:"Alucard — 68,4 %"},
+  {y:1997,n:"Tomb Raider II",s:"Tomb Raider",b:3,sub:"Lara — Venise, la vedette"},
+  {y:1997,n:"Final Fantasy Tactics",s:"Final Fantasy",b:3,sub:"Ramza — chapitre 3"},
+  {y:1997,n:"Oddworld: Abe's Oddysee",s:"Oddworld",b:2,sub:"99 Mudokons sauvés"},
+  {y:1997,n:"Crash Bandicoot 2",s:"Crash",b:2,sub:"24 cristaux — 11 gemmes"},
+  {y:1997,n:"Bushido Blade",s:"Bushido",b:1,sub:"Katana — sans défaite"},
+  {y:1997,n:"Colony Wars",s:"Colony Wars",b:2,sub:"Branche C — mission 9"},
+  {y:1997,n:"Croc",s:"Croc",b:2,sub:"Île 3 — 5 Gobbos"},
+  {y:1997,n:"Time Crisis",s:"Time Crisis",b:1,sub:"Aire 2 — 4 continues"},
+  {y:1997,n:"Soul Blade",s:"Soul",b:1,sub:"Sophitia — Edge Master vaincu"},
+  {y:1997,n:"Micro Machines V3",s:"Micro Machines",b:1,sub:"Championnat — 6 têtes"},
+  {y:1997,n:"Diablo",s:"Diablo",b:4,sub:"Guerrier niv. 22 — étage 12"},
+  {y:1997,n:"G-Police",s:"G-Police",b:2,sub:"Mission 14 — Callisto"},
+  {y:1997,n:"Alundra",s:"Alundra",b:3,sub:"Sanctuaire de l'Eau"},
+  {y:1997,n:"Breath of Fire III",s:"Breath of Fire",b:3,sub:"Ryu niv. 33 — désert"},
+  {y:1997,n:"Grand Theft Auto",s:"GTA",b:2,sub:"Liberty City — 1,2 M"},
+  {y:1997,n:"V-Rally",s:"V-Rally",b:3,sub:"Championnat — Indonésie"},
+  {y:1997,n:"Ace Combat 2",s:"Ace Combat",b:1,sub:"Mission 22 — Z.O.E."},
+  {y:1997,n:"Ghost in the Shell",s:"GITS",b:1,sub:"Mission 9 — le Fuchikoma"},
+  {y:1997,n:"PaRappa the Rapper",s:"PaRappa",b:1,sub:"Stage 5 — Cool"},
+  {y:1997,n:"Vandal Hearts",s:"Vandal Hearts",b:2,sub:"Ash — bataille 21"},
+  {y:1997,n:"Final Fantasy VII (disque 3)",s:"Final Fantasy",b:5,sub:"Chocobo doré — 78 h"},
+  {y:1997,n:"Nuclear Strike",s:"Strike",b:2,sub:"Campagne — 4e zone"},
+  {y:1997,n:"Overboard!",s:"Overboard",b:1,sub:"Île 6 — 3 canons"},
+
+  /* ---- 1998 ---- */
+  {y:1998,n:"Metal Gear Solid",s:"Metal Gear",b:3,sub:"Disque 2 — la soute"},
+  {y:1998,n:"Resident Evil 2",s:"Resident Evil",b:3,sub:"Leon A — laboratoire"},
+  {y:1998,n:"Tekken 3",s:"Tekken",b:2,sub:"Tous persos débloqués"},
+  {y:1998,n:"Xenogears",s:"Xenogears",b:5,sub:"Fei niv. 46 — disque 2"},
+  {y:1998,n:"Parasite Eve",s:"Parasite Eve",b:4,sub:"Aya niv. 27 — jour 5"},
+  {y:1998,n:"Spyro the Dragon",s:"Spyro",b:2,sub:"78 dragons libérés"},
+  {y:1998,n:"Colin McRae Rally",s:"McRae",b:5,sub:"Championnat — Corse"},
+  {y:1998,n:"Crash Bandicoot 3: Warped",s:"Crash",b:2,sub:"105 % — toutes reliques"},
+  {y:1998,n:"Tomb Raider III",s:"Tomb Raider",b:4,sub:"Lara — Antarctique"},
+  {y:1998,n:"Oddworld: Abe's Exoddus",s:"Oddworld",b:3,sub:"264 Mudokons — 0 mort"},
+  {y:1998,n:"MediEvil",s:"MediEvil",b:2,sub:"Sir Dan — la crypte"},
+  {y:1998,n:"Tenchu",s:"Tenchu",b:2,sub:"Rikimaru — rang Grand Maître"},
+  {y:1998,n:"Rival Schools",s:"Rival Schools",b:2,sub:"Batsu — Taiyo au complet"},
+  {y:1998,n:"Bloody Roar",s:"Bloody Roar",b:1,sub:"Yugo — arcade dégagé"},
+  {y:1998,n:"Einhänder",s:"Einhänder",b:1,sub:"Score 1 284 300"},
+  {y:1998,n:"Brave Fencer Musashi",s:"Musashi",b:3,sub:"Bincho — 5 fragments"},
+  {y:1998,n:"Klonoa",s:"Klonoa",b:2,sub:"Vision 5-2"},
+  {y:1998,n:"Bust A Groove",s:"Bust A Groove",b:1,sub:"Heat — 4 combos parfaits"},
+  {y:1998,n:"Future Cop: L.A.P.D.",s:"Future Cop",b:2,sub:"Mission 5 — Precinct Assault"},
+  {y:1998,n:"Point Blank",s:"Point Blank",b:1,sub:"Arcade — 96 tableaux"},
+  {y:1998,n:"Heart of Darkness",s:"Heart of Darkness",b:2,sub:"Andy — la vallée"},
+  {y:1998,n:"Devil Dice",s:"Devil Dice",b:1,sub:"Tour — niveau 40"},
+  {y:1998,n:"Rogue Trip",s:"Rogue Trip",b:2,sub:"Route 66 — 3 passagers"},
+  {y:1998,n:"Formula 1 98",s:"Formula 1",b:2,sub:"Saison — Spa sous la pluie"},
+  {y:1998,n:"Apocalypse",s:"Apocalypse",b:2,sub:"Niveau 4 — les Quatre"},
+  {y:1998,n:"Skullmonkeys",s:"Skullmonkeys",b:1,sub:"Klaymen — monde 3"},
+
+  /* ---- 1999 ---- */
+  {y:1999,n:"Final Fantasy VIII",s:"Final Fantasy",b:5,sub:"Squall niv. 38 — disque 3"},
+  {y:1999,n:"Silent Hill",s:"Silent Hill",b:3,sub:"Harry — hôpital Alchemilla"},
+  {y:1999,n:"Gran Turismo 2",s:"Gran Turismo",b:6,sub:"41,2 % — 88 voitures"},
+  {y:1999,n:"Dino Crisis",s:"Dino Crisis",b:3,sub:"Regina — salle du générateur"},
+  {y:1999,n:"Resident Evil 3: Nemesis",s:"Resident Evil",b:3,sub:"Jill — le clocher"},
+  {y:1999,n:"Driver",s:"Driver",b:2,sub:"Miami — filature ratée ×7"},
+  {y:1999,n:"Crash Team Racing",s:"Crash",b:2,sub:"Aventure — 3 reliques"},
+  {y:1999,n:"Ape Escape",s:"Ape Escape",b:3,sub:"204 singes"},
+  {y:1999,n:"Medal of Honor",s:"Medal of Honor",b:2,sub:"Mission 5 — le sous-marin"},
+  {y:1999,n:"Tony Hawk's Pro Skater",s:"Tony Hawk",b:2,sub:"Warehouse — 9 objectifs"},
+  {y:1999,n:"Legacy of Kain: Soul Reaver",s:"Soul Reaver",b:3,sub:"Raziel — le Silenced Cathedral"},
+  {y:1999,n:"Suikoden II",s:"Suikoden",b:3,sub:"108 étoiles — 94 recrutées"},
+  {y:1999,n:"Star Ocean: Second Story",s:"Star Ocean",b:5,sub:"Claude niv. 52 — 62 h"},
+  {y:1999,n:"Grandia",s:"Grandia",b:4,sub:"Justin — le Mur de fin du monde"},
+  {y:1999,n:"Syphon Filter",s:"Syphon Filter",b:2,sub:"Gabe — le métro"},
+  {y:1999,n:"Spyro 2",s:"Spyro",b:2,sub:"Autumn Plains — 64 talismans"},
+  {y:1999,n:"Ridge Racer Type 4",s:"Ridge Racer",b:2,sub:"Grand Prix — 320 voitures"},
+  {y:1999,n:"WipEout 3",s:"WipEout",b:2,sub:"Phantom — Mega Mall"},
+  {y:1999,n:"Tomb Raider: The Last Revelation",s:"Tomb Raider",b:4,sub:"Lara — Vallée des Rois"},
+  {y:1999,n:"Metal Gear Solid: VR Missions",s:"Metal Gear",b:4,sub:"213 missions"},
+  {y:1999,n:"Grand Theft Auto 2",s:"GTA",b:3,sub:"Downtown — respect Zaibatsu"},
+  {y:1999,n:"Silent Bomber",s:"Silent Bomber",b:1,sub:"Jutah — zone 6"},
+  {y:1999,n:"Um Jammer Lammy",s:"PaRappa",b:1,sub:"Stage 6 — Cool"},
+  {y:1999,n:"Rollcage",s:"Rollcage",b:2,sub:"Championnat — division 1"},
+  {y:1999,n:"Vandal Hearts II",s:"Vandal Hearts",b:3,sub:"Joshua — chapitre 4"},
+  {y:1999,n:"Omega Boost",s:"Omega Boost",b:1,sub:"Stage 7 — rang A"},
+  {y:1999,n:"Jet Moto 3",s:"Jet Moto",b:2,sub:"Circuit pro — 4 pistes"},
+
+  /* ---- 2000 ---- */
+  {y:2000,n:"Final Fantasy IX",s:"Final Fantasy",b:6,sub:"Djidane niv. 44 — disque 3"},
+  {y:2000,n:"Chrono Cross",s:"Chrono",b:6,sub:"Serge — 22 équipiers"},
+  {y:2000,n:"Vagrant Story",s:"Vagrant Story",b:3,sub:"Ashley — Grand Cimetière"},
+  {y:2000,n:"Legend of Dragoon",s:"Dragoon",b:5,sub:"Dart — Mille Ans de Rêve"},
+  {y:2000,n:"Parasite Eve II",s:"Parasite Eve",b:4,sub:"Aya — Dryfield"},
+  {y:2000,n:"Dino Crisis 2",s:"Dino Crisis",b:3,sub:"Dylan — 48 200 points"},
+  {y:2000,n:"Fear Effect",s:"Fear Effect",b:3,sub:"Hana — disque 2"},
+  {y:2000,n:"Colin McRae Rally 2.0",s:"McRae",b:5,sub:"Championnat — Kenya"},
+  {y:2000,n:"Front Mission 3",s:"Front Mission",b:4,sub:"Kazuki — réseau 47 %"},
+  {y:2000,n:"Tony Hawk's Pro Skater 2",s:"Tony Hawk",b:2,sub:"Venice — 9 objectifs"},
+  {y:2000,n:"Spyro: Year of the Dragon",s:"Spyro",b:3,sub:"117 œufs"},
+  {y:2000,n:"Driver 2",s:"Driver",b:3,sub:"Chicago — 3 planques"},
+  {y:2000,n:"Rayman 2",s:"Rayman",b:3,sub:"88 % — la Prison des Cages"},
+  {y:2000,n:"Legend of Mana",s:"Mana",b:4,sub:"Terre de Fa'Diel — 31 lieux"},
+  {y:2000,n:"Persona 2: Eternal Punishment",s:"Persona",b:4,sub:"Maya — 71 personas"},
+  {y:2000,n:"Threads of Fate",s:"Threads of Fate",b:3,sub:"Rue — le Relic"},
+  {y:2000,n:"Medal of Honor: Underground",s:"Medal of Honor",b:2,sub:"Manon — Paris occupé"},
+  {y:2000,n:"Crash Bash",s:"Crash",b:2,sub:"Coupe or — 4 trophées"},
+  {y:2000,n:"Tomb Raider Chronicles",s:"Tomb Raider",b:4,sub:"Lara — le sous-marin russe"},
+  {y:2000,n:"Digimon World",s:"Digimon",b:2,sub:"Agumon — 18 recrues"},
+  {y:2000,n:"Vib-Ribbon",s:"Vib-Ribbon",b:1,sub:"CD perso — 12 morceaux"},
+  {y:2000,n:"Tenchu 2",s:"Tenchu",b:2,sub:"Ayame — mission 8"},
+  {y:2000,n:"The Misadventures of Tron Bonne",s:"Tron Bonne",b:2,sub:"40 Servbots"},
+
+  /* ---- 2001 et après : le fond de génération, gros et lourd ---- */
+  {y:2001,n:"Final Fantasy Chronicles",s:"Final Fantasy",b:7,sub:"Chrono Trigger — NG+"},
+  {y:2001,n:"Dragon Quest VII",s:"Dragon Quest",b:5,sub:"Héros niv. 39 — 96 h"},
+  {y:2001,n:"Alone in the Dark: The New Nightmare",s:"Alone in the Dark",b:3,sub:"Carnby — la bibliothèque"},
+  {y:2001,n:"Tony Hawk's Pro Skater 3",s:"Tony Hawk",b:2,sub:"Foundry — combo 480 k"},
+  {y:2001,n:"Harry Potter à l'école des sorciers",s:"Harry Potter",b:2,sub:"Année 1 — 4 sortilèges"},
+  {y:2001,n:"Frogger 2",s:"Frogger",b:1,sub:"Monde 5 — 12 bébés"},
+  {y:2001,n:"Point Blank 3",s:"Point Blank",b:1,sub:"Arcade — rang S"},
+  {y:2001,n:"Final Fantasy Anthology",s:"Final Fantasy",b:6,sub:"FF VI — Kefka, disque 2"},
+  {y:2001,n:"Digimon World 2",s:"Digimon",b:3,sub:"Domaine 4 — 24 digimons"},
+  {y:2001,n:"Star Wars: Demolition",s:"Star Wars",b:2,sub:"Boba Fett — 6 arènes"},
+];
+
+const SLOTS=15, TURNS=30, ROT_LIFE=3;
+const HUES=[4,32,52,88,150,190,222,268,318];
+let S=null, uid=1, frame=0, sound=true, actx=null;
+
+/* ---------- audio ---------- */
+function bip(f=660,d=.05,type="square",v=.05){
+  if(!sound) return;
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type=type;o.frequency.value=f;g.gain.value=v;
+    o.connect(g);g.connect(actx.destination);o.start();
+    g.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+d);
+    o.stop(actx.currentTime+d);
+  }catch(e){}
+}
+
+/* ---------- icônes 8x8 procédurales ---------- */
+function hash(str){let h=2166136261;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}
+function rngFrom(seed){let s=seed||1;return()=>{s^=s<<13;s^=s>>>17;s^=s<<5;s>>>=0;return s/4294967296}}
+function iconData(name){
+  const r=rngFrom(hash(name));
+  const hue=Math.floor(r()*360);
+  const pal=[null,
+    `hsl(${hue} 70% 62%)`,
+    `hsl(${(hue+38)%360} 75% 44%)`,
+    `hsl(${(hue+300)%360} 60% 82%)`];
+  const grid=[];
+  for(let y=0;y<8;y++){
+    const row=[];
+    for(let x=0;x<4;x++){
+      const v=r();
+      row.push(v<.34?0:v<.62?1:v<.86?2:3);
+    }
+    grid.push(row.concat([...row].reverse()));
+  }
+  return {pal,grid,hue};
+}
+const iconCache={};
+function getIcon(n){return iconCache[n]||(iconCache[n]=iconData(n))}
+function paletteFor(h){
+  return [null,`hsl(${h} 70% 64%)`,`hsl(${(h+38)%360} 75% 42%)`,`hsl(${(h+308)%360} 55% 86%)`];
+}
+function drawIcon(cv,name,f,hue){
+  const d=getIcon(name),ctx=cv.getContext("2d");
+  const pal=paletteFor(hue==null||hue===""?d.hue:+hue);
+  ctx.imageSmoothingEnabled=false;
+  ctx.fillStyle="#0b0b18";ctx.fillRect(0,0,8,8);
+  for(let y=0;y<8;y++)for(let x=0;x<8;x++){
+    let v=d.grid[y][x];
+    if(v===0)continue;
+    if(f===1&&v===1)v=3; else if(f===2&&v===3)v=1;
+    ctx.fillStyle=pal[v];
+    ctx.fillRect(x,y,1,1);
+  }
+}
+
+/* ---------- état ---------- */
+function newGame(){
+  S={
+    turn:0,
+    blocks:Array.from({length:SLOTS},()=>({st:"free",save:null,rot:0})),
+    saves:[], incoming:null, ghost:null, sel:null, over:false, busy:false
+  };
+  uid=1;
+  document.getElementById("log").innerHTML="";
+  say("Carte mémoire vierge. 15 blocs disponibles.");
+  nextIncoming();
+  render();
+}
+function year(){return 1996+Math.floor(S.turn/5)}
+function say(t,cls){
+  const l=document.getElementById("log");
+  const p=document.createElement("p");
+  if(cls)p.className=cls;
+  p.textContent="> "+t;l.appendChild(p);l.scrollTop=l.scrollHeight;
+}
+function fmtH(h){return Math.floor(h)+" h"+String(Math.floor((h%1)*60)).padStart(2,"0")}
+function totalHours(){return S.saves.reduce((a,s)=>a+s.hours,0)}
+
+function nextIncoming(){
+  const y=year();
+  const pool=CATALOG.filter(g=>g.y<=y && !S.saves.some(s=>s.name===g.n));
+  const list=pool.length?pool:CATALOG;
+  const g=list[Math.floor(Math.random()*list.length)];
+  // teinte choisie parmi celles qui ne sont pas déjà sur la carte, pour que
+  // deux plaques voisines ne se confondent jamais
+  const taken=new Set(S.saves.map(s=>s.hue));
+  const avail=HUES.filter(h=>!taken.has(h));
+  const hues=avail.length?avail:HUES;
+  S.incoming={name:g.n,series:g.s,size:g.b,sub:g.sub,hue:hues[Math.floor(Math.random()*hues.length)]};
+  S.ghost=null;
+}
+
+/* ---------- placement ---------- */
+function canPlaceAt(i,size){
+  if(i+size>SLOTS)return false;
+  for(let k=i;k<i+size;k++) if(S.blocks[k].st!=="free")return false;
+  return true;
+}
+function anyPlacement(size){
+  for(let i=0;i<SLOTS;i++) if(canPlaceAt(i,size))return true;
+  return false;
+}
+function potentialPlacement(size){ // en supprimant tout le supprimable
+  let run=0;
+  for(let i=0;i<SLOTS;i++){
+    if(S.blocks[i].st==="dead"){run=0;continue}
+    run++;if(run>=size)return true;
+  }
+  return false;
+}
+
+/* ---------- actions ---------- */
+function write(){
+  if(S.busy||S.over)return;
+  if(S.ghost===null){setStatus("Choisis un bloc de départ dans la barre.");bip(200,.08);return}
+  const {size,name,series,sub,hue}=S.incoming, start=S.ghost;
+  S.busy=true;
+  const sv={id:uid++,name,series,sub,hue,hours:0,blocks:[]};
+  let k=0;
+  const step=()=>{
+    const idx=start+k;
+    S.blocks[idx]={st:"used",save:sv.id,rot:0};
+    sv.blocks.push(idx);
+    bip(880+k*40,.04);
+    k++;render();
+    if(k<size){setTimeout(step,140)}
+    else{
+      S.saves.push(sv);
+      say(`Écriture terminée — ${name} (${size} bloc${size>1?"s":""}).`);
+      S.busy=false;endTurn();
+    }
+  };
+  step();
+}
+function del(){
+  if(S.busy||S.over)return;
+  const sv=S.saves.find(s=>s.id===S.sel);
+  if(!sv){setStatus("Sélectionne une sauvegarde à supprimer.");bip(200,.08);return}
+  const cured=sv.blocks.filter(i=>S.blocks[i].rot>0).length;
+  sv.blocks.forEach(i=>{S.blocks[i]={st:"free",save:null,rot:0}});
+  S.saves=S.saves.filter(s=>s.id!==sv.id);
+  S.sel=null;S.ghost=null;
+  bip(160,.18,"sawtooth");
+  say(`Supprimé — ${sv.name} (${fmtH(sv.hours)})${cured?` · ${cured} bloc(s) assaini(s)`:""}.`,"hot");
+  render();
+}
+function skip(){
+  if(S.busy||S.over)return;
+  say(`Refusé — ${S.incoming.name} ne sera pas installé.`);
+  bip(300,.1);
+  endTurn();
+}
+function format(){
+  if(S.busy||S.over)return;
+  if(!S.saves.length){setStatus("La carte est déjà vide.");return}
+  const lost=totalHours();
+  S.saves=[];
+  S.blocks=S.blocks.map(b=>b.st==="dead"?b:{st:"free",save:null,rot:0});
+  S.sel=null;S.ghost=null;
+  bip(120,.4,"sawtooth",.07);
+  say(`Carte formatée. ${fmtH(lost)} perdues. Les blocs morts restent morts.`,"bad");
+  render();
+}
+
+/* ---------- tour ---------- */
+function endTurn(){
+  // heures accumulées
+  S.saves.forEach(sv=>{
+    let gain=2+Math.random()*3;
+    const nb=neighbourSeries(sv);
+    if(nb){gain+=2;}
+    sv.hours+=gain;
+    sv._combo=nb;
+  });
+  // propagation
+  const rotting=S.blocks.map((b,i)=>b.rot>0?i:-1).filter(i=>i>=0);
+  rotting.forEach(i=>{
+    [i-1,i+1].forEach(j=>{
+      if(j<0||j>=SLOTS)return;
+      if(S.blocks[j].st==="used"&&S.blocks[j].rot===0&&Math.random()<.5){
+        S.blocks[j].rot=1;
+      }
+    });
+  });
+  // vieillissement
+  const killed=new Set();
+  S.blocks.forEach((b,i)=>{
+    if(b.rot>0){
+      b.rot++;
+      if(b.rot>ROT_LIFE){killed.add(b.save);S.blocks[i]={st:"dead",save:null,rot:0}}
+    }
+  });
+  killed.forEach(id=>{
+    const sv=S.saves.find(s=>s.id===id);
+    if(!sv)return;
+    sv.blocks.forEach(i=>{if(S.blocks[i].st!=="dead")S.blocks[i]={st:"free",save:null,rot:0}});
+    S.saves=S.saves.filter(s=>s.id!==id);
+    say(`SECTEUR ILLISIBLE — ${sv.name} perdu (${fmtH(sv.hours)}).`,"bad");
+    bip(90,.5,"sawtooth",.08);
+  });
+  // nouvelle infection
+  const used=S.blocks.map((b,i)=>b.st==="used"&&b.rot===0?i:-1).filter(i=>i>=0);
+  const chance=.2+S.turn*.016;
+  if(S.turn>=3&&used.length&&Math.random()<chance){
+    const i=used[Math.floor(Math.random()*used.length)];
+    S.blocks[i].rot=1;
+    const sv=S.saves.find(s=>s.id===S.blocks[i].save);
+    say(`Bloc ${i+1} instable — ${sv?sv.name:"?"} commence à se corrompre.`,"hot");
+    bip(240,.2,"triangle");
+  }
+
+  S.turn++;
+  if(S.turn>=TURNS){gameOver("Vous rangez la PlayStation.");return}
+  if(!potentialPlacement(1)){gameOver("Plus un seul bloc lisible.");return}
+  nextIncoming();
+  S.sel=null;
+  render();
+}
+function neighbourSeries(sv){
+  const first=Math.min(...sv.blocks), last=Math.max(...sv.blocks);
+  for(const j of [first-1,last+1]){
+    if(j<0||j>=SLOTS)continue;
+    const o=S.saves.find(s=>s.id===S.blocks[j].save);
+    if(o&&o.id!==sv.id&&o.series===sv.series)return o.name;
+  }
+  return null;
+}
+function gameOver(title){
+  S.over=true;
+  document.getElementById("ovTitle").textContent=title;
+  document.getElementById("ovScore").textContent=fmtH(totalHours());
+  const dead=S.blocks.filter(b=>b.st==="dead").length;
+  document.getElementById("ovText").textContent=
+    `${S.saves.length} sauvegarde(s) encore lisible(s), ${dead} bloc(s) mort(s). `+
+    (S.saves.length?`La plus ancienne : ${S.saves[0].name}.`:"La carte est vide.");
+  document.getElementById("over").classList.remove("hide");
+  render();
+}
+
+/* ---------- rendu ---------- */
+function setStatus(t){document.getElementById("status").textContent=t}
+
+function render(){
+  document.getElementById("year").textContent=year();
+  document.getElementById("turnc").textContent=`${Math.min(S.turn+1,TURNS)} / ${TURNS}`;
+  document.getElementById("hours").textContent=fmtH(totalHours());
+  document.getElementById("deadc").textContent=S.blocks.filter(b=>b.st==="dead").length;
+  document.getElementById("freecount").textContent=
+    S.blocks.filter(b=>b.st==="free").length+" libre(s)";
+
+  // liste
+  const list=document.getElementById("list");
+  list.innerHTML="";
+  if(!S.saves.length){
+    const d=document.createElement("div");d.className="empty";
+    d.textContent="Aucune donnée. Écris ta première sauvegarde.";
+    list.appendChild(d);
+  }
+  S.saves.forEach(sv=>{
+    const rotten=sv.blocks.some(i=>S.blocks[i].rot>0);
+    const el=document.createElement("div");
+    el.className="save"+(S.sel===sv.id?" sel":"")+(rotten?" rot":"");
+    el.tabIndex=0;
+    const cv=document.createElement("canvas");cv.width=8;cv.height=8;
+    cv.dataset.icon=sv.name;cv.dataset.hue=sv.hue;
+    el.appendChild(cv);
+    const m=document.createElement("div");m.className="meta";
+    m.innerHTML=`<div class="nm"></div><div class="sb"></div>`;
+    m.querySelector(".nm").textContent=sv.name;
+    m.querySelector(".sb").textContent=`${sv.sub} · ${fmtH(sv.hours)}`+(sv._combo?" · série":"");
+    el.appendChild(m);
+    const b=document.createElement("div");b.className="bk";
+    b.textContent=sv.blocks.length+" bl.";
+    el.appendChild(b);
+    const pick=()=>{S.sel=S.sel===sv.id?null:sv.id;bip(720,.03);render();};
+    el.onclick=pick;
+    el.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();pick()}};
+    list.appendChild(el);
+  });
+
+  // strip
+  const strip=document.getElementById("strip");
+  strip.innerHTML="";
+  const size=S.incoming?S.incoming.size:0;
+  S.blocks.forEach((b,i)=>{
+    const el=document.createElement("div");
+    const sv=b.save?S.saves.find(s=>s.id===b.save):null;
+    const prev=i>0?S.blocks[i-1]:null;
+    const cont=!!(sv&&prev&&prev.save===b.save);   // suite d'une plaque existante
+    const inGhost=S.ghost!==null&&i>=S.ghost&&i<S.ghost+size;
+
+    let cls="blk";
+    if(b.st==="dead")cls+=" dead";
+    else if(b.rot>0)cls+=" rot";
+    else if(b.st==="used")cls+=" used";
+    if(inGhost)cls+=" ghost";
+    if(cont||(inGhost&&i>S.ghost))cls+=" cont";
+    if(sv&&S.sel===sv.id)cls+=" selg";
+    el.className=cls;
+
+    if(sv)el.style.setProperty("--h",sv.hue);
+    if(inGhost)el.style.setProperty("--h",S.incoming.hue);
+
+    const n=sv?sv.blocks.length:0;
+    el.title=b.st==="dead"?"Bloc mort":
+             b.rot>0?`${sv?sv.name+" — ":""}corrompu, mort dans ${ROT_LIFE-b.rot+1} tour(s)`:
+             sv?`${sv.name} — bloc ${sv.blocks.indexOf(i)+1}/${n}`:"Libre";
+    el.innerHTML=`<span class="n">${i+1}</span>`+(b.rot>0?`<span class="tick">${ROT_LIFE-b.rot+1}</span>`:"");
+
+    // l'icône ne s'affiche qu'en tête de plaque : elle identifie tout le groupe
+    let iconName=null,iconHue=null;
+    if(sv&&!cont){iconName=sv.name;iconHue=sv.hue}
+    else if(inGhost&&i===S.ghost){iconName=S.incoming.name;iconHue=S.incoming.hue}
+    if(iconName){
+      const cv=document.createElement("canvas");cv.width=8;cv.height=8;
+      cv.dataset.icon=iconName;cv.dataset.hue=iconHue;
+      el.appendChild(cv);
+    }
+    el.onclick=()=>{
+      if(S.busy||S.over)return;
+      if(S.blocks[i].st==="used"){
+        S.sel=S.blocks[i].save;bip(720,.03);render();return;
+      }
+      if(canPlaceAt(i,size)){S.ghost=i;bip(980,.04);setStatus(`Départ bloc ${i+1} → ${i+size}. Appuie sur Écrire.`);}
+      else{S.ghost=null;bip(200,.08);setStatus(`Impossible : il faut ${size} blocs libres d'affilée à partir d'ici.`)}
+      render();
+    };
+    strip.appendChild(el);
+  });
+
+  // entrant
+  if(S.incoming){
+    document.getElementById("inName").textContent=S.incoming.name;
+    document.getElementById("inSub").textContent=S.incoming.sub;
+    document.getElementById("inReq").textContent=S.incoming.size+" BLOCS";
+    document.getElementById("inIcon").dataset.icon=S.incoming.name;
+    document.getElementById("inIcon").dataset.hue=S.incoming.hue;
+  }
+  const fits=S.incoming?anyPlacement(S.incoming.size):false;
+  document.getElementById("btnWrite").disabled=S.over||!fits||S.ghost===null;
+  document.getElementById("btnDel").disabled=S.over||!S.sel;
+  document.getElementById("btnSkip").disabled=S.over;
+  document.getElementById("btnFmt").disabled=S.over;
+  if(!S.over&&!fits&&S.incoming)
+    setStatus(`Pas de place pour ${S.incoming.size} blocs d'affilée. Supprime, formate, ou refuse.`);
+  drawAll();
+}
+
+function drawAll(){
+  document.querySelectorAll("canvas[data-icon]").forEach(cv=>{
+    drawIcon(cv,cv.dataset.icon,frame,cv.dataset.hue);
+  });
+}
+setInterval(()=>{frame=(frame+1)%3;drawAll();},380);
+
+/* ---------- bind ---------- */
+document.getElementById("btnWrite").onclick=write;
+document.getElementById("btnDel").onclick=del;
+document.getElementById("btnSkip").onclick=skip;
+document.getElementById("btnFmt").onclick=format;
+document.getElementById("btnRestart").onclick=()=>{document.getElementById("over").classList.add("hide");newGame()};
+document.getElementById("ovBtn").onclick=()=>{document.getElementById("over").classList.add("hide");newGame()};
+document.getElementById("btnSnd").onclick=e=>{sound=!sound;e.target.textContent=sound?"♪ ON":"♪ OFF"};
+
+newGame();
+</script>
+</body>
+</html>
